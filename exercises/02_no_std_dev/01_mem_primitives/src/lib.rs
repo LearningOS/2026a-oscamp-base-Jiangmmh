@@ -1,16 +1,17 @@
 //! # no_std Memory Primitives
-//!
+//! 
 //! In a `#![no_std]` environment, you have no standard library — only `core`.
 //! These memory operation functions are the most fundamental building blocks in an OS kernel.
 //! Functions like memcpy/memset in libc must be implemented by ourselves in bare-metal environments.
 //!
 //! ## Task
-//!
+//! 
 //! Implement the following five functions:
 //! - Only use the `core` crate, no `std`
 //! - Do not call `core::ptr::copy`, `core::ptr::copy_nonoverlapping`, etc. (write your own loops)
 //! - Handle edge cases correctly (n=0, overlapping memory regions, etc.)
 //! - Pass all tests
+
 
 // Force no_std in production; allow std in tests (cargo test framework requires it)
 #![cfg_attr(not(test), no_std)]
@@ -23,11 +24,30 @@
 ///
 /// # Safety
 /// `dst` and `src` must each point to at least `n` bytes of valid memory.
+
+use core::ptr;
+
+// 加上 extern "C" 后，编译器会按目标架构的 C ABI（如 x86_64 SysV / ARM64 AAPCS）
+// 传递 dst、src、n 并通过返回值寄存器返回 dst。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_memcpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     // TODO: Implement memcpy
-    // Hint: read bytes from src one by one and write to dst
-    todo!()
+    // Hint: read bytes from src one by one and write to dst 
+    let mut i = 0;
+    while i < n {
+        // SAFETY:
+        // 1. Caller guarantees `src` and `dst` are valid for `n` bytes, and `i < n`,
+        //    so `src.add(i)` and `dst.add(i)` stay within allocated bounds.
+        // 2. `u8` has alignment 1, so pointer alignment is always satisfied.
+        // 3. `ptr::read` / `ptr::write` avoid creating references (`&T` / `&mut T`)
+        //    to potentially uninitialized or aliased/unaligned memory.
+        unsafe {
+            let byte = ptr::read(src.add(i));
+            ptr::write(dst.add(i), byte);
+        }
+        i += 1;
+    }
+    dst
 }
 
 /// Set `n` bytes starting at `dst` to the value `c`.
@@ -39,7 +59,14 @@ pub unsafe extern "C" fn my_memcpy(dst: *mut u8, src: *const u8, n: usize) -> *m
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_memset(dst: *mut u8, c: u8, n: usize) -> *mut u8 {
     // TODO: Implement memset
-    todo!()
+    let mut i = 0;
+    while i < n {
+        unsafe {
+            ptr::write(dst.add(i), c);
+        }
+        i += 1;
+    }
+    dst
 }
 
 /// Copy `n` bytes from `src` to `dst`, correctly handling overlapping memory.
@@ -52,7 +79,27 @@ pub unsafe extern "C" fn my_memset(dst: *mut u8, c: u8, n: usize) -> *mut u8 {
 pub unsafe extern "C" fn my_memmove(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     // TODO: Implement memmove
     // Hint: when dst > src and regions overlap, copy backwards (from end to start)
-    todo!()
+    if dst as usize > src as usize { 
+        let mut i = n;
+        while i > 0 {
+            i -= 1;
+            unsafe {
+                let byte = ptr::read(src.add(i));
+                ptr::write(dst.add(i), byte);
+            }
+        }
+    } else {
+        let mut i = 0;
+        while i < n {
+            unsafe {
+                let byte = ptr::read(src.add(i));
+                ptr::write(dst.add(i), byte);
+            }
+            i += 1;
+        };
+    }
+
+    dst
 }
 
 /// Return the length of a null-terminated byte string, excluding the trailing null.
@@ -62,7 +109,12 @@ pub unsafe extern "C" fn my_memmove(dst: *mut u8, src: *const u8, n: usize) -> *
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_strlen(s: *const u8) -> usize {
     // TODO: Implement strlen
-    todo!()
+    let mut cnt: usize = 0;
+
+    while unsafe { ptr::read(s.add(cnt)) } != 0 {
+        cnt += 1;
+    }
+    cnt
 }
 
 /// Compare two null-terminated byte strings.
@@ -77,7 +129,20 @@ pub unsafe extern "C" fn my_strlen(s: *const u8) -> usize {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn my_strcmp(s1: *const u8, s2: *const u8) -> i32 {
     // TODO: Implement strcmp
-    todo!()
+    let mut i: usize = 0;
+
+    loop {
+        let (b1, b2) = unsafe {(ptr::read(s1.add(i)), ptr::read(s2.add(i)))};
+
+        if b1 != b2 {
+            return (b1 as i32) - (b2 as i32);
+        }
+        if b1 == 0 {
+            return 0;
+        }
+
+        i += 1;
+    }
 }
 
 // ============================================================

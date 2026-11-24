@@ -2,9 +2,9 @@
 //!
 //! Implement a simple file descriptor (fd) table — the core data structure
 //! for managing open files in an OS kernel.
-//!
+//! 
 //! ## Background
-//!
+//! 
 //! In the Linux kernel, each process has an fd table that maps integer fds to kernel file objects.
 //! User programs perform read/write/close via fds, and the kernel looks up the corresponding
 //! file object through the fd table.
@@ -18,7 +18,7 @@
 //!   4 -> (empty)
 //!   5 -> Socket(...)
 //! ```
-//!
+//! 
 //! ## Task
 //!
 //! Implement the following methods on `FdTable`:
@@ -41,6 +41,7 @@
 use std::sync::Arc;
 
 /// File abstraction trait — all "files" in the kernel (regular files, pipes, sockets) implement this
+/// 只要是实现了read()和write()方法的类型都是File
 pub trait File: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> isize;
     fn write(&self, buf: &[u8]) -> isize;
@@ -51,13 +52,14 @@ pub struct FdTable {
     // TODO: Design the internal structure
     // Hint: use Vec<Option<Arc<dyn File>>>
     //       the index is the fd number, None means the fd is closed or unallocated
+    entries: Vec<Option<Arc<dyn File>>>,
 }
 
 impl FdTable {
     /// Create an empty fd table
     pub fn new() -> Self {
         // TODO
-        todo!()
+        Self { entries: Vec::new() }
     }
 
     /// Allocate a new fd, return the fd number.
@@ -65,25 +67,42 @@ impl FdTable {
     /// Prefers reusing the smallest closed fd number; if no free slot, appends to the end.
     pub fn alloc(&mut self, file: Arc<dyn File>) -> usize {
         // TODO
-        todo!()
+        // position + is_none = 找到第一个为none的entries
+        // 和Linux中的策略一直，从0开始找第一个未被使用的fd
+        if let Some(fd) = self.entries.iter().position(Option::is_none) {
+            self.entries[fd] = Some(file);
+            fd
+        } else {
+            let fd = self.entries.len();
+            self.entries.push(Some(file));
+            fd
+        }
     }
 
     /// Get the file object for an fd. Returns None if the fd doesn't exist or is closed.
     pub fn get(&self, fd: usize) -> Option<Arc<dyn File>> {
         // TODO
-        todo!()
+        // and_then如果为None，就返回None
+        // 否则调用闭包函数
+        self.entries.get(fd).and_then(|slot| slot.clone())
     }
 
     /// Close an fd. Returns true on success, false if the fd doesn't exist or is already closed.
     pub fn close(&mut self, fd: usize) -> bool {
         // TODO
-        todo!()
+        match self.entries.get_mut(fd) {
+            Some(slot) if slot.is_some() => {
+                *slot = None;   // 剔除fd
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Return the number of currently allocated fds (excluding closed ones)
     pub fn count(&self) -> usize {
         // TODO
-        todo!()
+        self.entries.iter().filter(|slot| slot.is_some()).count()
     }
 }
 

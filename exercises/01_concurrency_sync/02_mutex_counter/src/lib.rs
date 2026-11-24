@@ -20,7 +20,22 @@ pub fn concurrent_counter(n_threads: usize, count_per_thread: usize) -> usize {
     // TODO: Spawn n_threads threads
     // TODO: In each thread, lock() and increment count_per_thread times
     // TODO: Join all threads, return final value
-    todo!()
+    let count = Arc::new(Mutex::new(0usize));
+    thread::scope(|s| {
+        for _ in 0..n_threads {
+            s.spawn(|| {
+                for _ in 0..count_per_thread {
+                    let mut num = count.lock().unwrap();
+                    *num += 1;
+                }
+            });
+        }
+    });
+
+    Arc::try_unwrap(count)
+        .expect("all threads joined, ref count should be 1")
+        .into_inner()
+        .unwrap()
 }
 
 /// Add elements to a shared vector concurrently using multiple threads.
@@ -32,7 +47,24 @@ pub fn concurrent_collect(n_threads: usize) -> Vec<usize> {
     // TODO: Create Arc<Mutex<Vec<usize>>>
     // TODO: Each thread pushes its own id
     // TODO: After joining all threads, sort the result and return
-    todo!()
+    let vec = Arc::new(Mutex::new(Vec::new()));
+
+    thread::scope(|s| {
+        for id in 0..n_threads {
+            // 这里使用clone是为了避免vec被转移所有权
+            let vec = Arc::clone(&vec);
+            s.spawn(move || {
+                vec.lock().unwrap().push(id);
+            });
+        }
+    });
+
+    let mut result = Arc::try_unwrap(vec)
+        .expect("all threads joined, ref count should be 1")
+        .into_inner()
+        .unwrap();
+    result.sort_unstable();
+    result
 }
 
 #[cfg(test)]

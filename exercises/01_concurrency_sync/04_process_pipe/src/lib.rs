@@ -1,13 +1,13 @@
 //! # Process and Pipes
 //!
 //! In this exercise, you will learn how to create child processes and communicate through pipes.
-//!
+//! 
 //! ## Concepts
 //! - `std::process::Command` creates child processes (corresponds to `fork()` + `execve()` system calls)
 //! - `Stdio::piped()` sets up pipes (corresponds to `pipe()` + `dup2()` system calls)
 //! - Communicate with child processes via stdin/stdout
 //! - Obtain child process exit status (corresponds to `waitpid()` system call)
-//!
+//! 
 //! ## OS Concepts Mapping
 //! This exercise demonstrates user‑space abstractions over underlying OS primitives:
 //! - **Process creation**: Rust's `Command::new()` internally invokes `fork()` to create a child process,
@@ -18,7 +18,7 @@
 //!   of standard input/output.
 //! - **Resource management**: File descriptors (including pipe ends) are automatically closed when
 //!   their Rust `Stdio` objects are dropped, preventing resource leaks.
-//!
+//! 
 //! ## Exercise Structure
 //! 1. **Basic command execution** (`run_command`) – launch a child process and capture its stdout.
 //! 2. **Bidirectional pipe communication** (`pipe_through_cat`) – send data to a child process (`cat`)
@@ -27,12 +27,13 @@
 //! 4. **Advanced: error‑handling version** (`run_command_with_result`) – learn proper error propagation.
 //! 5. **Advanced: complex bidirectional communication** (`pipe_through_grep`) – interact with a filter
 //!    program that reads multiple lines and produces filtered output.
-//!
+//! 
 //! Each function includes a `TODO` comment indicating where you need to write code.
 //! Run `cargo test` to check your implementations.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write, BufRead, BufReader};   
 use std::process::{Command, Stdio};
+use std::fmt::Write as _;
 
 /// Execute the given shell command and return its stdout output.
 ///
@@ -42,7 +43,7 @@ use std::process::{Command, Stdio};
 /// - `Command::new(program)` → `fork()` + `execve()` family
 /// - `Stdio::piped()` → `pipe()` + `dup2()` (sets up a pipe for stdout)
 /// - `.output()` → `waitpid()` (waits for child process termination)
-///
+/// 
 /// # Implementation Steps
 /// 1. Create a `Command` with the given program and arguments.
 /// 2. Set `.stdout(Stdio::piped())` to capture the child's stdout.
@@ -51,22 +52,34 @@ use std::process::{Command, Stdio};
 pub fn run_command(program: &str, args: &[&str]) -> String {
     // TODO: Use Command::new to create process
     // TODO: Set stdout to Stdio::piped()
-    // TODO: Execute with .output() and get output
-    // TODO: Convert stdout to String and return
-    todo!()
+    // TODO: Execute with .output() and get output 
+    // TODO: Convert stdout to String and return 
+
+    // 如果不配置 .stdout(Stdio::piped())，子进程默认继承父进程的标准输出，
+    // 输出会直接打印到当前终端/父进程的 stdout，父进程无法在内存里拿到字节流
+    // 加上 .stdout(Stdio::piped()) 后，子进程写往 stdout 的内容会进入管道缓冲区，
+    // 由父进程读取并收集到 output.stdout: Vec<u8> 中。
+    let output = Command::new(program)
+            .args(args)
+            .stdout(Stdio::piped()) 
+            .output()
+            .expect("failed to execute process");
+    
+    String::from_utf8(output.stdout)
+        .expect("child process produced invalid UTF-8")
 }
 
 /// Write data to child process (cat) stdin via pipe and read its stdout output.
-///
+/// 
 /// This demonstrates bidirectional pipe communication between parent and child processes.
-///
+/// 
 /// # Underlying System Calls
 /// - `Command::new("cat")` → `fork()` + `execve("cat")`
 /// - `Stdio::piped()` (twice) → `pipe()` creates two pipes (stdin & stdout) + `dup2()` redirects them
-/// - `ChildStdin::write_all()` → `write()` to the pipe's write end
-/// - `drop(stdin)` → `close()` on the write end, sending EOF to child
-/// - `ChildStdout::read_to_string()` → `read()` from the pipe's read end
-///
+/// - `ChildStdin::write_all()` → `write()` to the pipe's write end 
+/// - `drop(stdin)` → `close()` on the write end, sending EOF to child 
+/// - `ChildStdout::read_to_string()` → `read()` from the pipe's read end 
+/// 
 /// # Ownership and Resource Management
 /// Rust's ownership system ensures pipes are closed at the right time:
 /// 1. The `ChildStdin` handle is owned by the parent; writing to it transfers data to the child.
@@ -89,12 +102,35 @@ pub fn pipe_through_cat(input: &str) -> String {
     // TODO: Write input to child process stdin
     // TODO: Drop stdin to close pipe (otherwise cat won't exit)
     // TODO: Read output from child process stdout
-    todo!()
+
+    // 介绍了双向管道的使用
+    let mut child = Command::new("cat")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cat process");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(input.as_bytes())
+            .expect("failed to write to child stdin");
+        drop(stdin);
+    }
+
+    let mut output = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        stdout
+            .read_to_string(&mut output)
+            .expect("failed to read from child stdout");
+    }
+
+    child.wait().expect("failed to wait for child process");
+    output
 }
 
 /// Get child process exit code.
 /// Execute command `sh -c {command}` and return the exit code.
-///
+/// 
 /// # Underlying System Calls
 /// - `Command::new("sh")` → `fork()` + `execve("/bin/sh")`
 /// - `.args(["-c", command])` passes the shell command line
@@ -110,17 +146,22 @@ pub fn get_exit_code(command: &str) -> i32 {
     // TODO: Use Command::new("sh").args(["-c", command])
     // TODO: Execute and get status
     // TODO: Return exit code
-    todo!()
+    let st = Command::new("sh")
+            .args(["-c", command])
+            .status()
+            .expect("failed to execute shell command");
+
+    st.code().unwrap_or(-1)
 }
 
 /// Execute the given shell command and return its stdout output as a `Result`.
-///
+/// 
 /// This version properly propagates errors that may occur during process creation,
 /// execution, or I/O (e.g., command not found, permission denied, broken pipe).
-///
+/// 
 /// # Underlying System Calls
 /// Same as `run_command`, but errors are captured from the OS and returned as `Err`.
-///
+/// 
 /// # Error Handling
 /// - `Command::new()` only constructs the builder; errors occur at `.output()`.
 /// - `.output()` returns `Result<Output, std::io::Error>`.
@@ -137,7 +178,14 @@ pub fn run_command_with_result(program: &str, args: &[&str]) -> io::Result<Strin
     // TODO: Set stdout to Stdio::piped()
     // TODO: Execute with .output() and handle Result
     // TODO: Convert stdout to String with from_utf8, mapping errors to io::Error
-    todo!()
+    let output = Command::new(program)
+            .args(args)
+            .stdout(Stdio::piped())
+            .output()?;
+    
+    // 处理错误的方法
+    String::from_utf8(output.stdout)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Interact with `grep` via bidirectional pipes, filtering lines that contain a pattern.
@@ -150,7 +198,7 @@ pub fn run_command_with_result(program: &str, args: &[&str]) -> io::Result<Strin
 /// - `Command::new("grep")` → `fork()` + `execve("grep")`
 /// - Two pipes (stdin & stdout) as in `pipe_through_cat`
 /// - Line‑by‑line writing and reading to simulate interactive filtering
-///
+/// 
 /// # Implementation Steps
 /// 1. Create a `Command` for `"grep"` with argument `pattern`, and both ends piped.
 /// 2. `.spawn()` the command, obtaining `Child` with `stdin` and `stdout` handles.
@@ -167,7 +215,32 @@ pub fn pipe_through_grep(pattern: &str, input: &str) -> String {
     // TODO: Drop stdin to close pipe
     // TODO: Read output from child stdout line by line
     // TODO: Collect and return matching lines
-    todo!()
+    let mut c = Command::new("grep")
+            .arg(pattern)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn grep process");
+    
+    if let Some(mut stdin) = c.stdin.take() {
+        for line in input.lines() {
+            writeln!(stdin, "{line}").expect("failed to write line to grep stdin");
+        }
+        // 显式关闭写端，向 grep 发送 EOF
+        drop(stdin);
+    }
+
+    let mut result = String::new();
+    if let Some(stdout) = c.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let matched = line.expect("failed to read line from grep stdout");
+            let _ = writeln!(result, "{matched}");
+        }
+    }
+    
+    c.wait().expect("failed to wait for grep process");
+    result
 }
 
 #[cfg(test)]

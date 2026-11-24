@@ -19,7 +19,7 @@
 //! - **Thread park/unpark**: `thread::park` blocks a thread, `unpark` wakes it, useful for custom scheduling.
 //! - **Get current thread handle**: `thread::current()`.
 //! - **Scoped threads**: `crossbeam::scope` or standard‑library `thread::scope` (Rust 1.63+) allow threads to borrow stack data without `move`.
-//!
+//! 
 //! Rust statically prevents data races through the ownership system and the `Send` and `Sync` traits.
 //! Types that implement `Send` can be transferred across thread boundaries.
 //! Types that implement `Sync` can be referenced from multiple threads simultaneously.
@@ -109,7 +109,7 @@ use std::time::Duration;
 ///         let h2 = s.spawn(|| b.iter().sum::<i32>());
 ///         (h1.join().unwrap(), h2.join().unwrap())
 ///     });
-///
+///     
 ///     // `a` and `b` are still accessible here.
 ///     println!("sum_a = {}, sum_b = {}", sum_a, sum_b);
 /// }
@@ -157,7 +157,18 @@ pub fn double_in_thread(numbers: Vec<i32>) -> Vec<i32> {
     // TODO: Create a new thread to multiply each element of numbers by 2
     // Use thread::spawn and move closure
     // Use join().unwrap() to get result
-    todo!()
+    
+    // 1. 使用thread::spawn创建一个线程
+    // 2. 通过move关键字将numbers传入线程
+    // 3. 在其中用 iter + map + collect 实现数组元素的double
+    let handle = thread::spawn(move || {
+        // into_iter会转移其中元素的所有权
+        // iter则只会借用
+        numbers.into_iter().map(|n| n * 2).collect()
+    });
+
+    // join会返回一个Result对象，其中包含的是线程的返回值
+    handle.join().unwrap()
 }
 
 /// Sum two vectors in parallel, returning a tuple of two sums.
@@ -167,7 +178,14 @@ pub fn double_in_thread(numbers: Vec<i32>) -> Vec<i32> {
 pub fn parallel_sum(a: Vec<i32>, b: Vec<i32>) -> (i32, i32) {
     // TODO: Create two threads to sum a and b respectively
     // Join both threads to get results
-    todo!()
+    let t1 = thread::spawn(move || {
+        a.iter().sum()
+    });
+    let t2 = thread::spawn(move || {
+        b.iter().sum()
+    });
+
+    (t1.join().unwrap(), t2.join().unwrap())
 }
 
 // ============================================================================
@@ -185,7 +203,18 @@ pub fn named_sleeper(value: i32, ms: u64) -> i32 {
     // TODO: Create a thread builder with name "sleeper"
     // TODO: Spawn a thread that sleeps for `ms` milliseconds and returns `value`
     // TODO: Join the thread and return the value
-    todo!()
+
+    // thread::Builder相当于是一个线程构造工厂
+    // 这里该工厂名为sleeper，专门用于构造sleeper线程
+    let handle = thread::Builder::new()
+        .name("sleeper".to_string())
+        .spawn(move || {
+            thread::sleep(Duration::from_secs(ms));
+            value
+        })
+        .expect("failed to spawn sleeper thread");
+
+    handle.join().unwrap()
 }
 
 thread_local! {
@@ -200,7 +229,13 @@ thread_local! {
 /// Hint: Use `THREAD_COUNT.with(|cell| { ... })` to access the thread‑local variable.
 pub fn increment_thread_local() -> usize {
     // TODO: Use THREAD_COUNT.with to increment and return the new count
-    todo!()
+    // thread_local! 是 Rust 标准库提供的宏，用来声明每个线程各自独立拥有一份的静态变量。
+    // 对于 thread_local 变量，可以使用 with + 闭包 进行处理
+    THREAD_COUNT.with(|cell| {
+        let mut count = cell.borrow_mut();
+        *count += 1;
+        *count
+    })
 }
 
 /// Spawn two threads using a **scoped thread** to compute the sum of two slices without moving ownership.
@@ -216,7 +251,17 @@ pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
     // TODO: Use thread::scope to spawn two threads
     // TODO: Each thread sums its slice
     // TODO: Wait for both threads and return the results
-    todo!()
+    thread::scope(|s| {
+        let t1 = s.spawn(|| {
+            a.iter().sum()
+        });
+        
+        let t2 = s.spawn(|| {
+            b.iter().sum()
+        });
+
+        (t1.join().unwrap(), t2.join().unwrap())
+    })
 }
 
 /// Handle a possible panic in a spawned thread.
@@ -233,7 +278,18 @@ pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
 pub fn handle_panic(value: i32, should_panic: bool) -> Result<i32, ()> {
     // TODO: Spawn a thread that either panics or returns value
     // TODO: Join and map the result appropriately
-    todo!()
+    let handle = thread::spawn(move || {
+        if should_panic {
+            panic!("oops");
+        } else {
+            value
+        }
+    });
+    
+    match handle.join() {
+        Ok(v) => Ok(v),
+        Err(_) => Err(()),
+    }
 }
 
 #[cfg(test)]

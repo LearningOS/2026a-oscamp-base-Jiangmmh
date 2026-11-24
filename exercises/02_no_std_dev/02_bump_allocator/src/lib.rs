@@ -3,7 +3,7 @@
 //! Implement the simplest heap memory allocator: a Bump Allocator (bump pointer allocator).
 //!
 //! ## How It Works
-//!
+//! 
 //! A Bump Allocator maintains a pointer `next` to the "next available address".
 //! On each allocation, it aligns `next` to the requested alignment, then advances by `size` bytes.
 //! It does not support freeing individual objects (`dealloc` is a no-op).
@@ -14,7 +14,7 @@
 //!                                        ^
 //!                                    next allocation starts here
 //! ```
-//!
+//! 
 //! ## Task
 //!
 //! Implement `BumpAllocator`'s `GlobalAlloc::alloc` method:
@@ -22,15 +22,18 @@
 //!    Hint: `align_up(addr, align) = (addr + align - 1) & !(align - 1)`
 //! 2. Check if the aligned address plus `layout.size()` exceeds `heap_end`
 //! 3. If it exceeds, return `null_mut()`; otherwise atomically update `next` with `compare_exchange`
-//!
+//! 
 //! ## Key Concepts
-//!
+//! 
 //! - `core::alloc::{GlobalAlloc, Layout}`
 //! - Memory alignment calculation
 //! - `AtomicUsize` and `compare_exchange` (CAS loop)
 
+// no_std库单测时的标准写法：生产构建时采用no_std，cargo test时允许std
 #![cfg_attr(not(test), no_std)]
 
+// GlobalAlloc是一个trait，定义了一个分配器应该具备的接口
+// 即一个 alloc() 和 一个dealloc()
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -43,7 +46,7 @@ pub struct BumpAllocator {
 
 impl BumpAllocator {
     /// Create a new BumpAllocator.
-    ///
+    /// 
     /// # Safety
     /// `heap_start..heap_end` must be a valid, readable and writable memory region,
     /// and must not be used by other code during this allocator's lifetime.
@@ -53,7 +56,7 @@ impl BumpAllocator {
             heap_end,
             next: AtomicUsize::new(heap_start),
         }
-    }
+    } 
 
     /// Reset the allocator (free all allocated memory).
     pub fn reset(&self) {
@@ -74,7 +77,45 @@ unsafe impl GlobalAlloc for BumpAllocator {
         // 5. Atomically update next to end using compare_exchange
         //    (if CAS fails, another thread raced — retry in a loop)
         // 6. Return the aligned address as a pointer
-        todo!()
+        let align = layout.align(); // 存储块的最小字节对齐
+        let size = layout.size();   // 存储块的最小单位
+        
+        let mut current = self.next.load(Ordering::Relaxed);
+        loop {
+            // 1. 将当前指针向上对齐到 layout.align()（要求 align 为 2 的幂，Layout 已保证）
+            let remainder = current % align;
+            let alloc_start = if remainder == 0 {
+                current
+            } else {
+                // 整数加法，溢出返回None
+                match current.checked_add(align - remainder) {
+                    Some(aligned) => aligned,
+                    None => return null_mut(),
+                }
+            };
+
+            // 2. 计算分配结束地址，防止 usize 加法溢出
+            let alloc_end = match alloc_start.checked_add(size) {
+                Some(end) => end,
+                None => return null_mut(),
+            };
+
+            // 3. 检查是否超出堆上限
+            if alloc_end > self.heap_end {
+                return null_mut();
+            }
+
+            // 4. 原子更新 next；若其他线程先一步修改了 next，则重试
+            match self.next.compare_exchange_weak(
+                current,
+                alloc_end,
+                Ordering::AcqRel,  
+                Ordering::Acquire,
+            ) { 
+                Ok(_) => return alloc_start as *mut u8,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {

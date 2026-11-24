@@ -1,7 +1,7 @@
 //! # Atomic Operations Basics
-//!
+//! 
 //! In this exercise, you will use atomic types to implement a lock-free thread‑safe counter.
-//!
+//! 
 //! ## Key Concepts
 //! - `std::sync::atomic::AtomicU64`
 //! - `fetch_add`, `fetch_sub`, `load`, `store` operations
