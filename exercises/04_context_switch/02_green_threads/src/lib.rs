@@ -1,5 +1,5 @@
 //! # Green Thread Scheduler (riscv64)
-//!
+//! 
 //! In this exercise, you build a simple cooperative (green) thread scheduler on top of context switching.
 //! This crate is **riscv64 only**; run with the repo's normal flow (`./check.sh` / `oscamp`) or natively on riscv64.
 //!
