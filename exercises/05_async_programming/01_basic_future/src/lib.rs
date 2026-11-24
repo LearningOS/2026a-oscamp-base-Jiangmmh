@@ -27,13 +27,21 @@ impl CountDown {
 // - Output type is &'static str
 // - Each poll: if count == 0, return Poll::Ready("liftoff!")
 // - Otherwise count -= 1, call cx.waker().wake_by_ref(), return Poll::Pending
-//
+// 
 // Hint: Use `self.get_mut()` to get `&mut Self` (since self is Pin<&mut Self>)
 impl Future for CountDown {
     type Output = &'static str;
 
+    // 实现poll()方法，执行器会反复调用它
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        let this = self.get_mut();
+        if this.count == 0 {
+            Poll::Ready("liftoff!")
+        } else {
+            this.count -= 1;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 
@@ -57,7 +65,14 @@ impl Future for YieldOnce {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        todo!()
+        let this = self.get_mut();
+        if this.yielded {
+            Poll::Ready(())
+        } else {
+            this.yielded = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 

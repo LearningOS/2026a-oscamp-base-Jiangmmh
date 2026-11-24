@@ -1,7 +1,7 @@
 //! # Select and Timeout
 //!
 //! In this exercise, you will use `tokio::select!` macro to implement race selection and timeout control.
-//!
+//! 
 //! ## Concepts
 //! - `tokio::select!` waits for multiple async operations simultaneously
 //! - `tokio::time::timeout` timeout control
@@ -18,10 +18,13 @@ use tokio::time::{sleep, Duration};
 pub async fn with_timeout<F, T>(future: F, timeout_ms: u64) -> Option<T>
 where
     F: Future<Output = T>,
-{
+{   
     // TODO: Use tokio::select! to race between future and sleep
     // Or use tokio::time::timeout
-    todo!()
+    tokio::select! {
+        result = future => Some(result),
+        _ = sleep(Duration::from_millis(timeout_ms)) => None,
+    }
 }
 
 /// Race two async tasks, return the result of whichever finishes first.
@@ -34,7 +37,10 @@ where
 {
     // TODO: Use tokio::select! to wait for f1 and f2
     // Return the result of whichever completes first
-    todo!()
+    tokio::select! {
+        result = f1 => result,
+        result = f2 => result,
+    }
 }
 
 #[cfg(test)]
